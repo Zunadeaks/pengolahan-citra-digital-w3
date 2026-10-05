@@ -1,0 +1,169 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def adjust_brightness(image, value):
+    result = image.astype(np.int16) + value
+    return np.clip(result, 0, 255).astype(np.uint8)
+
+
+def adjust_contrast(image, factor):
+    result = 128 + factor * (image.astype(np.float32) - 128)
+    return np.clip(result, 0, 255).astype(np.uint8)
+
+
+def threshold_image(image, threshold_value):
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    return np.where(gray >= threshold_value, 255, 0).astype(np.uint8)
+
+
+def bilinear_interpolation(image, x, y):
+    height, width = image.shape[:2]
+
+    if x < 0 or x >= width - 1 or y < 0 or y >= height - 1:
+        return np.zeros(image.shape[2], dtype=np.float64) if image.ndim == 3 else 0
+
+    x1, y1 = int(np.floor(x)), int(np.floor(y))
+    x2, y2 = x1 + 1, y1 + 1
+
+    dx = x - x1
+    dy = y - y1
+
+    value = (
+        image[y1, x1].astype(np.float64) * (1 - dx) * (1 - dy)
+        + image[y1, x2].astype(np.float64) * dx * (1 - dy)
+        + image[y2, x1].astype(np.float64) * (1 - dx) * dy
+        + image[y2, x2].astype(np.float64) * dx * dy
+    )
+
+    return value
+
+
+def translation(image, tx, ty):
+    height, width = image.shape[:2]
+    result = np.zeros_like(image)
+
+    for y in range(height):
+        for x in range(width):
+            src_x = x - tx
+            src_y = y - ty
+
+            if 0 <= src_x < width - 1 and 0 <= src_y < height - 1:
+                result[y, x] = bilinear_interpolation(image, src_x, src_y)
+
+    return result.astype(np.uint8)
+
+
+def rotation(image, angle):
+    height, width = image.shape[:2]
+    result = np.zeros_like(image)
+
+    center_x = (width - 1) / 2
+    center_y = (height - 1) / 2
+
+    theta = np.radians(angle)
+    cos_a = np.cos(theta)
+    sin_a = np.sin(theta)
+
+    for y in range(height):
+        for x in range(width):
+            dx = x - center_x
+            dy = y - center_y
+
+            src_x = cos_a * dx + sin_a * dy + center_x
+            src_y = -sin_a * dx + cos_a * dy + center_y
+
+            if 0 <= src_x < width - 1 and 0 <= src_y < height - 1:
+                result[y, x] = bilinear_interpolation(image, src_x, src_y)
+
+    return result.astype(np.uint8)
+
+
+def scaling(image, scale_x, scale_y):
+    if scale_x <= 0 or scale_y <= 0:
+        raise ValueError("Skala harus lebih besar dari 0.")
+
+    height, width = image.shape[:2]
+
+    new_width = max(1, int(width * scale_x))
+    new_height = max(1, int(height * scale_y))
+
+    result = np.zeros((new_height, new_width, image.shape[2]), dtype=np.uint8)
+
+    for y in range(new_height):
+        for x in range(new_width):
+            src_x = x / scale_x
+            src_y = y / scale_y
+
+            if 0 <= src_x < width - 1 and 0 <= src_y < height - 1:
+                result[y, x] = bilinear_interpolation(image, src_x, src_y)
+
+    return result
+
+
+def main():
+    image = cv2.imread("contoh.jpg")
+
+    if image is None:
+        print("Gambar contoh.jpg tidak ditemukan!")
+        print("Letakkan gambar di folder yang sama dengan program.")
+        return
+
+    # Mengubah BGR menjadi RGB
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    print("Gambar berhasil dibaca.")
+    print("Ukuran gambar:", image.shape)
+
+    # Menjalankan setiap fungsi
+    brightness = adjust_brightness(image, 50)
+    contrast = adjust_contrast(image, 1.5)
+    threshold = threshold_image(image, 128)
+    translated = translation(image, 50, 30)
+    rotated = rotation(image, 45)
+    scaled = scaling(image, 1.5, 1.5)
+
+    # Menyimpan hasil gambar
+    cv2.imwrite("hasil_brightness.jpg", cv2.cvtColor(brightness, cv2.COLOR_RGB2BGR))
+    cv2.imwrite("hasil_contrast.jpg", cv2.cvtColor(contrast, cv2.COLOR_RGB2BGR))
+    cv2.imwrite("hasil_threshold.jpg", threshold)
+    cv2.imwrite("hasil_translation.jpg", cv2.cvtColor(translated, cv2.COLOR_RGB2BGR))
+    cv2.imwrite("hasil_rotation.jpg", cv2.cvtColor(rotated, cv2.COLOR_RGB2BGR))
+    cv2.imwrite("hasil_scaling.jpg", cv2.cvtColor(scaled, cv2.COLOR_RGB2BGR))
+
+    # Menampilkan seluruh hasil
+    results = [
+        ("Gambar Asli", image, None),
+        ("Brightness +50", brightness, None),
+        ("Contrast x1.5", contrast, None),
+        ("Threshold 128", threshold, "gray"),
+        ("Translation (50, 30)", translated, None),
+        ("Rotation 45 Derajat", rotated, None),
+        ("Scaling 1.5x", scaled, None)
+    ]
+
+    plt.figure(figsize=(14, 10))
+
+    for i, (title, result, color_map) in enumerate(results):
+        plt.subplot(3, 3, i + 1)
+
+        if color_map == "gray":
+            plt.imshow(result, cmap="gray", vmin=0, vmax=255)
+        else:
+            plt.imshow(result)
+
+        plt.title(title)
+        plt.axis("off")
+
+    plt.tight_layout()
+    print("Semua hasil ditampilkan.")
+    print("Tutup jendela gambar untuk mengakhiri program.")
+
+    plt.show()
+
+    print("Selesai. Hasil transformasi telah disimpan.")
+
+
+if __name__ == "__main__":
+    main()
